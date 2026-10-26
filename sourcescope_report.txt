@@ -1,0 +1,22 @@
+SourceScope Analysis Report
+===========================
+Files: 3
+Symbols: 3
+Include edges: 2
+Call edges: 2
+
+SYMBOLS
+-------
+FUNCTION,main,./sample_project/main.c,4
+FUNCTION,add,./sample_project/math_utils.c,3
+MACRO,MATH_UTILS_H,./sample_project/math_utils.h,2
+
+FILE DEPENDENCIES
+-----------------
+./sample_project/main.c -> math_utils.h (line 1)
+./sample_project/math_utils.c -> math_utils.h (line 1)
+
+FUNCTION CALLS
+--------------
+main -> add (./sample_project/main.c:6)
+main -> printf (./sample_project/main.c:7)
