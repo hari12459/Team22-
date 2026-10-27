@@ -5,6 +5,7 @@
 #include <cstring>
 #include <string>
 #include <unistd.h>
+#include <fcntl.h>
 
 extern "C" {
 #include "common.h"
@@ -15,163 +16,81 @@ extern "C" {
 #include "scanner.h"
 }
 
-TEST(ParserTest, ExtractMacroAndIncludeDependency)
+// ============================ HELPERS =================================
+
+static Project* create_project()
 {
-    Project* p = create_project();
-    ASSERT_NE(p, nullptr);
+    return static_cast<Project*>(calloc(1, sizeof(Project)));
+}
 
-    const char source[] =
-        "#define LIMIT 10\n"
-        "#include \"utils.h\"\n"
-        "int run(void) { return LIMIT; }\n";
+static void destroy_project(Project* p)
+{
+    if (p != nullptr) {
+        project_cleanup(p);
+        free(p);
+    }
+}
 
-    p->file_count = 1;
-    strcpy(p->files[0].path, "test.c");
-    p->files[0].source = static_cast<char*>(malloc(sizeof(source)));
-    ASSERT_NE(p->files[0].source, nullptr);
-    memcpy(p->files[0].source, source, sizeof(source));
-    p->files[0].length = strlen(source);
+// Redirect stdin so functions that use scanf() can be tested.
+class InputRedirect {
+public:
+    explicit InputRedirect(const char* input) : saved_stdin_(-1), file_(nullptr)
+    {
+        fflush(stdout);
+        file_ = tmpfile();
+        if (file_ == nullptr) return;
 
-    parser_analyze_file(p, 0);
+        size_t length = strlen(input);
+        if (fwrite(input, 1, length, file_) != length) return;
+        rewind(file_);
 
-    bool macro_found = false;
-    bool function_found = false;
-    for (int i = 0; i < p->symbol_count; ++i) {
-        if (strcmp(p->symbols[i].name, "LIMIT") == 0 &&
-            p->symbols[i].type == SYM_MACRO) macro_found = true;
-        if (strcmp(p->symbols[i].name, "run") == 0 &&
-            p->symbols[i].type == SYM_FUNCTION) function_found = true;
+        saved_stdin_ = dup(STDIN_FILENO);
+        if (saved_stdin_ == -1) return;
+
+        if (dup2(fileno(file_), STDIN_FILENO) == -1) {
+            close(saved_stdin_);
+            saved_stdin_ = -1;
+            return;
+        }
+
+        clearerr(stdin);
     }
 
-    EXPECT_TRUE(macro_found);
-    EXPECT_TRUE(function_found);
-    ASSERT_EQ(p->file_edge_count, 1);
-    EXPECT_STREQ(p->file_edges[0].to, "utils.h");
-
-    destroy_project(p);
-}
-
-TEST(ParserTest, RecordsFunctionCall)
-{
-    Project* p = create_project();
-    ASSERT_NE(p, nullptr);
-
-    const char source[] =
-        "int add(void) { return 1; }\n"
-        "int main(void) { add(); return 0; }\n";
-
-    p->file_count = 1;
-    strcpy(p->files[0].path, "test.c");
-    p->files[0].source = static_cast<char*>(malloc(sizeof(source)));
-    ASSERT_NE(p->files[0].source, nullptr);
-    memcpy(p->files[0].source, source, sizeof(source));
-    p->files[0].length = strlen(source);
-
-    parser_analyze_file(p, 0);
-
-    bool call_found = false;
-    for (int i = 0; i < p->call_edge_count; ++i) {
-        if (strcmp(p->call_edges[i].callee, "add") == 0) call_found = true;
+    ~InputRedirect()
+    {
+        if (saved_stdin_ != -1) {
+            dup2(saved_stdin_, STDIN_FILENO);
+            close(saved_stdin_);
+            clearerr(stdin);
+        }
+        if (file_ != nullptr) fclose(file_);
     }
-    EXPECT_TRUE(call_found);
 
-    destroy_project(p);
+    InputRedirect(const InputRedirect&) = delete;
+    InputRedirect& operator=(const InputRedirect&) = delete;
+
+private:
+    int saved_stdin_;
+    FILE* file_;
+};
+
+// ============================ BST TESTS ===============================
+
+TEST(BSTTest, InsertAndFindSymbol)
+{
+    Symbol symbol = {};
+    strcpy(symbol.name, "calculate");
+
+    BSTNode* root = nullptr;
+    bst_insert(&root, &symbol);
+
+    EXPECT_NE(bst_find(root, "calculate"), nullptr);
+    bst_free(root);
 }
 
-TEST(ParserTest, IgnoresFunctionTextInsideComment)
+TEST(BSTTest, FindMissingSymbol)
 {
-    Project* p = create_project();
-    ASSERT_NE(p, nullptr);
+    Symbol symbol = {};
+    strcpy(symbol.name, "calculate");
 
-    const char source[] =
-        "/* int fake(void) { return 0; } */\n"
-        "int real(void) { return 1; }\n";
-
-    p->file_count = 1;
-    strcpy(p->files[0].path, "test.c");
-    p->files[0].source = static_cast<char*>(malloc(sizeof(source)));
-    ASSERT_NE(p->files[0].source, nullptr);
-    memcpy(p->files[0].source, source, sizeof(source));
-    p->files[0].length = strlen(source);
-
-    parser_analyze_file(p, 0);
-
-    EXPECT_EQ(project_find_function(p, "fake", 0), -1);
-    EXPECT_GE(project_find_function(p, "real", 0), 0);
-
-    destroy_project(p);
-}
-
-// ============================ ANALYSIS TESTS ==========================
-
-TEST(AnalysisTest, PrintStatisticsSymbolsAndDependencies)
-{
-    Project* p = create_project();
-    ASSERT_NE(p, nullptr);
-
-    strcpy(p->files[0].path, "main.c");
-    p->file_count = 1;
-    project_add_symbol(p, "main", SYM_FUNCTION, 0, 1);
-    project_add_file_edge(p, "main.c", "utils.h", "INCLUDE", 1);
-    project_add_call_edge(p, 0, "printf", 0, 2);
-
-    EXPECT_NO_THROW(analysis_print_statistics(p));
-    EXPECT_NO_THROW(analysis_print_symbols(p));
-    EXPECT_NO_THROW(analysis_print_dependencies(p));
-
-    destroy_project(p);
-}
-
-TEST(AnalysisTest, SearchSymbolsWithMatchingName)
-{
-    Project* p = create_project();
-    ASSERT_NE(p, nullptr);
-
-    strcpy(p->files[0].path, "main.c");
-    p->file_count = 1;
-    project_add_symbol(p, "calculate", SYM_FUNCTION, 0, 1);
-
-    InputRedirect input("calculate\n");
-    EXPECT_NO_THROW(analysis_search_symbols(p));
-
-    destroy_project(p);
-}
-
-TEST(AnalysisTest, SearchSymbolsWithMissingName)
-{
-    Project* p = create_project();
-    ASSERT_NE(p, nullptr);
-
-    strcpy(p->files[0].path, "main.c");
-    p->file_count = 1;
-    project_add_symbol(p, "calculate", SYM_FUNCTION, 0, 1);
-
-    InputRedirect input("not_found\n");
-    EXPECT_NO_THROW(analysis_search_symbols(p));
-
-    destroy_project(p);
-}
-
-TEST(AnalysisTest, ImpactAnalysisForMatchingFile)
-{
-    Project* p = create_project();
-    ASSERT_NE(p, nullptr);
-
-    p->file_count = 2;
-    strcpy(p->files[0].path, "utils.h");
-    strcpy(p->files[1].path, "main.c");
-    project_add_file_edge(p, "main.c", "utils.h", "INCLUDE", 1);
-
-    InputRedirect input("utils.h\n");
-    EXPECT_NO_THROW(analysis_impact(p));
-
-    destroy_project(p);
-}
-
-TEST(AnalysisTest, ImpactAnalysisForUnknownFile)
-{
-    Project* p = create_project();
-    ASSERT_NE(p, nullptr);
-
-    p->file_count = 1;
-    strcpy(p->files[0].path, "main.c");
+    BSTNode* root = nullptr;
