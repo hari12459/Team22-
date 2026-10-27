@@ -1,3 +1,20 @@
+#include <gtest/gtest.h>
+
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <string>
+#include <unistd.h>
+
+extern "C" {
+#include "common.h"
+#include "analysis.h"
+#include "bst.h"
+#include "parser.h"
+#include "project.h"
+#include "scanner.h"
+}
+
 TEST(ParserTest, ExtractMacroAndIncludeDependency)
 {
     Project* p = create_project();
