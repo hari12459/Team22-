@@ -1,96 +1,123 @@
-#include <gtest/gtest.h>
+    ASSERT_NE(p->files[0].source, nullptr);
+    memcpy(p->files[0].source, source, sizeof(source));
+    p->files[0].length = strlen(source);
 
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <string>
-#include <unistd.h>
-#include <fcntl.h>
+    parser_analyze_file(p, 0);
 
-extern "C" {
-#include "common.h"
-#include "analysis.h"
-#include "bst.h"
-#include "parser.h"
-#include "project.h"
-#include "scanner.h"
+    EXPECT_EQ(project_find_function(p, "fake", 0), -1);
+    EXPECT_GE(project_find_function(p, "real", 0), 0);
+
+    destroy_project(p);
 }
 
-// ============================ HELPERS =================================
+// ============================ ANALYSIS TESTS ==========================
 
-static Project* create_project()
+TEST(AnalysisTest, PrintStatisticsSymbolsAndDependencies)
 {
-    return static_cast<Project*>(calloc(1, sizeof(Project)));
+    Project* p = create_project();
+    ASSERT_NE(p, nullptr);
+
+    p->file_count = 1;
+    strcpy(p->files[0].path, "main.c");
+    project_add_symbol(p, "main", SYM_FUNCTION, 0, 1);
+    project_add_file_edge(p, "main.c", "utils.h", "INCLUDE", 1);
+    project_add_call_edge(p, 0, "printf", 0, 2);
+
+    EXPECT_NO_THROW(analysis_print_statistics(p));
+    EXPECT_NO_THROW(analysis_print_symbols(p));
+    EXPECT_NO_THROW(analysis_print_dependencies(p));
+
+    destroy_project(p);
 }
 
-static void destroy_project(Project* p)
+TEST(AnalysisTest, SearchSymbolsWithMatchingName)
 {
-    if (p != nullptr) {
-        project_cleanup(p);
-        free(p);
-    }
-}
+    Project* p = create_project();
+    ASSERT_NE(p, nullptr);
 
-// Redirect stdin so functions that use scanf() can be tested.
-class InputRedirect {
-public:
-    explicit InputRedirect(const char* input) : saved_stdin_(-1), file_(nullptr)
+    p->file_count = 1;
+    strcpy(p->files[0].path, "main.c");
+    project_add_symbol(p, "calculate", SYM_FUNCTION, 0, 1);
+
     {
-        fflush(stdout);
-        file_ = tmpfile();
-        if (file_ == nullptr) return;
-
-        size_t length = strlen(input);
-        if (fwrite(input, 1, length, file_) != length) return;
-        rewind(file_);
-
-        saved_stdin_ = dup(STDIN_FILENO);
-        if (saved_stdin_ == -1) return;
-
-        if (dup2(fileno(file_), STDIN_FILENO) == -1) {
-            close(saved_stdin_);
-            saved_stdin_ = -1;
-            return;
-        }
-
-        clearerr(stdin);
+        InputRedirect input("calculate\n");
+        EXPECT_NO_THROW(analysis_search_symbols(p));
     }
 
-    ~InputRedirect()
-    {
-        if (saved_stdin_ != -1) {
-            dup2(saved_stdin_, STDIN_FILENO);
-            close(saved_stdin_);
-            clearerr(stdin);
-        }
-        if (file_ != nullptr) fclose(file_);
-    }
-
-    InputRedirect(const InputRedirect&) = delete;
-    InputRedirect& operator=(const InputRedirect&) = delete;
-
-private:
-    int saved_stdin_;
-    FILE* file_;
-};
-
-// ============================ BST TESTS ===============================
-
-TEST(BSTTest, InsertAndFindSymbol)
-{
-    Symbol symbol = {};
-    strcpy(symbol.name, "calculate");
-
-    BSTNode* root = nullptr;
-    bst_insert(&root, &symbol);
-
-    EXPECT_NE(bst_find(root, "calculate"), nullptr);
-    bst_free(root);
+    destroy_project(p);
 }
 
-TEST(BSTTest, FindMissingSymbol)
+TEST(AnalysisTest, SearchSymbolsWithMissingName)
 {
-    Symbol symbol = {};
-    strcpy(symbol.name, "calculate");
+    Project* p = create_project();
+    ASSERT_NE(p, nullptr);
 
-    BSTNode* root = nullptr;
+    p->file_count = 1;
+    strcpy(p->files[0].path, "main.c");
+    project_add_symbol(p, "calculate", SYM_FUNCTION, 0, 1);
+
+    {
+        InputRedirect input("not_found\n");
+        EXPECT_NO_THROW(analysis_search_symbols(p));
+    }
+
+    destroy_project(p);
+}
+
+TEST(AnalysisTest, ImpactAnalysisForMatchingFile)
+{
+    Project* p = create_project();
+    ASSERT_NE(p, nullptr);
+
+    p->file_count = 2;
+    strcpy(p->files[0].path, "utils.h");
+    strcpy(p->files[1].path, "main.c");
+    project_add_file_edge(p, "main.c", "utils.h", "INCLUDE", 1);
+
+    {
+        InputRedirect input("utils.h\n");
+        EXPECT_NO_THROW(analysis_impact(p));
+    }
+
+    destroy_project(p);
+}
+
+TEST(AnalysisTest, ImpactAnalysisForUnknownFile)
+{
+    Project* p = create_project();
+    ASSERT_NE(p, nullptr);
+
+    p->file_count = 1;
+    strcpy(p->files[0].path, "main.c");
+
+    {
+        InputRedirect input("unknown.c\n");
+        EXPECT_NO_THROW(analysis_impact(p));
+    }
+
+    destroy_project(p);
+}
+
+TEST(AnalysisTest, WriteReportToFile)
+{
+    Project* p = create_project();
+    ASSERT_NE(p, nullptr);
+
+    p->file_count = 1;
+    strcpy(p->files[0].path, "main.c");
+    project_add_symbol(p, "main", SYM_FUNCTION, 0, 1);
+
+    char report_path[] = "/tmp/sourcescope_report_XXXXXX";
+    int fd = mkstemp(report_path);
+    ASSERT_NE(fd, -1);
+    close(fd);
+
+    analysis_write_report(p, report_path);
+
+    FILE* report = fopen(report_path, "r");
+    ASSERT_NE(report, nullptr);
+    fclose(report);
+    remove(report_path);
+
+    destroy_project(p);
+}
