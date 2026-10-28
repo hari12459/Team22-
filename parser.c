@@ -58,9 +58,10 @@ static void directives(Project *p, int fi, const char *s)
                 name[n]='\0'; if(n) (void)project_add_symbol(p,name,SYM_MACRO,fi,line_no);
             } else if (!strncmp(q,"include",7)) {
                 const char *open=strchr(original,'"'); char close='"'; const char *closep;
-                char name[SS_MAX_PATH]; size_t n;
+                
                 if(!open) { open=strchr(original,'<'); close='>'; }
                 if(open && (closep=strchr(open+1,close))!=NULL) {
+                    char name[SS_MAX_PATH]; size_t n;
                     n=(size_t)(closep-open-1);
                     if(n<sizeof(name)) { memcpy(name,open+1,n); name[n]='\0';
                         (void)project_add_file_edge(p,p->files[fi].path,name,"INCLUDE",line_no); }
@@ -94,11 +95,14 @@ static void find_calls(Project *p, int fi, const char *s)
     size_t i=0,len=strlen(s); int current=-1,brace=0;
     while(i<len) {
         if(id_start(s[i])) {
-            size_t start=i,j,k,n; char name[SS_MAX_NAME]; int depth;
+           size_t start=i,j,n;
+           char name[SS_MAX_NAME];
             while(i<len && id_part(s[i])) ++i; n=i-start;
             if(n>=sizeof(name)) continue; memcpy(name,s+start,n); name[n]='\0';
             j=i; while(j<len && isspace((unsigned char)s[j])) ++j;
             if(j<len && s[j]=='(' && !is_keyword(name)) {
+                size_t k;
+                int depth;
                 depth=1;k=j+1;
                 while(k<len && depth>0){if(s[k]=='(')++depth;else if(s[k]==')')--depth;++k;}
                 while(k<len && isspace((unsigned char)s[k])) ++k;
@@ -121,13 +125,16 @@ static void find_simple_variables(Project *p, int fi, const char *s)
     while(*line) {
         const char *end=strchr(line,'\n'); size_t len=end?(size_t)(end-line):strlen(line);
         char buf[2048]; size_t n=len<sizeof(buf)-1?len:sizeof(buf)-1;
-        char *q,*semi,*eq,*token,*last=NULL;
+        char *q;
         memcpy(buf,line,n);buf[n]='\0';q=buf;while(*q&&isspace((unsigned char)*q))++q;
         if(*q && *q!='#' && strchr(q,';') && !strchr(q,'(') &&
            (!strncmp(q,"int ",4)||!strncmp(q,"char ",5)||!strncmp(q,"float ",6)||
             !strncmp(q,"double ",7)||!strncmp(q,"long ",5)||!strncmp(q,"short ",6)||
             !strncmp(q,"static ",7)||!strncmp(q,"const ",6)||!strncmp(q,"unsigned ",9)||
             !strncmp(q,"volatile ",9))) {
+
+            char *semi, *eq, *token;
+            const char *last = NULL;
             semi=strchr(q,';');if(semi)*semi='\0';eq=strchr(q,'=');if(eq)*eq='\0';
             token=strtok(q," \t*[],:");
             while(token){if(id_start(token[0])&&!is_keyword(token))last=token;token=strtok(NULL," \t*[],:");}
