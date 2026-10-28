@@ -4,8 +4,8 @@
 #include <cstring>
 #include <string>
 #include <unistd.h>
-#include "common.h"
 extern "C" {
+#include "common.h"
 #include "bst.h"
 #include "project.h"
 #include "scanner.h"
