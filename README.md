@@ -11,7 +11,7 @@
 
 ## Compile (Linux or MSYS2)
 ```sh
-gcc -std=c11 -Wall -Wextra -pedantic main.c scanner.c parser.c bst.c project.c analysis.c -o sourcescope
+gcc -std=c11 -Wall -Wextra -pedantic main.c scanner.c parser.c bst.c project.c analysis.c logger.c -o sourcescope
 ```
 
 ## Run
