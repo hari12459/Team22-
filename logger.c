@@ -1,90 +1,112 @@
 #include <stdio.h>
-#include <stdarg.h>
-#include <time.h>
-#include <sys/time.h>   /* gettimeofday for milliseconds */
+#include <stdlib.h>
+#include "common.h"
+#include "scanner.h"
+#include "parser.h"
+#include "analysis.h"
+#include "project.h"
 #include "logger.h"
 
-static FILE *log_file = NULL;
-
-static const char *get_level_name(LogLevel level)
+int main(int argc, char **argv)
 {
-    switch (level) {
-        case LOG_DEBUG:   return "DEBUG";
-        case LOG_INFO:    return "INFO";
-        case LOG_WARNING: return "WARNING";
-        case LOG_ERROR:   return "ERROR";
-        default:          return "UNKNOWN";
-    }
-}
+    Project *p;
+    int i, choice;
 
-int logger_init(const char *filename)
-{
-    if (filename == NULL)
-        return 0;
+    log_message(LOG_INFO, "SourceScope started");
 
-    if (log_file != NULL)
-        logger_close();
-
-    log_file = fopen(filename, "a");
-    return log_file != NULL;
-}
-
-void logger_log(LogLevel level, const char *format, ...)
-{
-    struct timeval tv;
-    struct tm tm_buf;
-    char timestamp[40];
-    va_list args, copy;
-
-    if (format == NULL)
-        return;
-
-    /* Always produce a timestamp – never silently drop the message */
-    if (gettimeofday(&tv, NULL) == 0 && localtime_r(&tv.tv_sec, &tm_buf) != NULL) {
-        size_t n = strftime(timestamp, sizeof(timestamp),
-                            "%Y-%m-%d %H:%M:%S", &tm_buf);
-        if (n > 0 && n < sizeof(timestamp) - 5)
-            snprintf(timestamp + n, sizeof(timestamp) - n,
-                     ".%03ld", (long)(tv.tv_usec / 1000));
-        else
-            snprintf(timestamp, sizeof(timestamp), "%ld.%03ld",
-                     (long)tv.tv_sec, (long)(tv.tv_usec / 1000));
-    } else {
-        /* fallback */
-        time_t now = time(NULL);
-        struct tm *t = localtime(&now);
-        if (t)
-            strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S.000", t);
-        else
-            snprintf(timestamp, sizeof(timestamp), "0000-00-00 00:00:00.000");
+    if (argc != 2) {
+        fprintf(stderr, "Usage: %s <source-directory>\n", argv[0]);
+        log_message(LOG_ERROR, "Invalid arguments provided");
+        return EXIT_FAILURE;
     }
 
-    va_start(args, format);
-    va_copy(copy, args);
+    p = (Project *)calloc(1, sizeof(*p));
 
-    /* Log file */
-    if (log_file != NULL) {
-        fprintf(log_file, "[%s] [%s] ", timestamp, get_level_name(level));
-        vfprintf(log_file, format, args);
-        fputc('\n', log_file);
-        fflush(log_file);
+    if (!p) {
+        fputs("Out of memory.\n", stderr);
+        log_message(LOG_ERROR, "Failed to allocate project memory");
+        return EXIT_FAILURE;
     }
 
-    /* Console */
-    printf("[%s] [%s] ", timestamp, get_level_name(level));
-    vprintf(format, copy);
-    putchar('\n');
-    fflush(stdout);
+    log_message(LOG_INFO, "Scanning source directory");
+    scanner_scan_directory(p, argv[1], 0);
 
-    va_end(copy);
-    va_end(args);
-}
+    if (!p->file_count) {
+        fprintf(stderr, "No .c or .h files found in '%s'.\n", argv[1]);
+        log_message(LOG_WARNING, "No source or header files found");
+        project_cleanup(p);
+        free(p);
+        log_message(LOG_INFO, "SourceScope stopped");
+        return EXIT_FAILURE;
+    }
 
-void logger_close(void)
-{
-    if (log_file != NULL) {
-        fflush(log_file);
-        fclose(log_file);
-        log_file = NULL;
+    printf("SourceScope: scanning %d source/header file(s)...\n",
+           p->file_count);
+
+    for (i = 0; i < p->file_count; ++i) {
+        printf("[%d/%d] %s\n",
+               i + 1, p->file_count, p->files[i].path);
+
+        log_message(LOG_INFO, "Analyzing source file");
+        parser_analyze_file(p, i);
+    }
+
+    log_message(LOG_INFO, "Source file analysis completed");
+
+    analysis_print_statistics(p);
+    analysis_print_dependencies(p);
+
+    for (;;) {
+        puts("\n=== SOURCESCOPE MENU ===\n"
+             "1. Display all symbols\n"
+             "2. Search symbol\n"
+             "3. Analyze change impact\n"
+             "4. Write report\n"
+             "5. Exit");
+
+        printf("Choose an option: ");
+
+        if (scanf("%d", &choice) != 1) {
+            int ch;
+            while ((ch = getchar()) != '\n' && ch != EOF) {}
+            puts("Enter a number from 1 to 5.");
+            log_message(LOG_WARNING, "Invalid menu input");
+            continue;
+        }
+
+        switch (choice) {
+            case 1:
+                log_message(LOG_INFO, "Displaying symbols");
+                analysis_print_symbols(p);
+                break;
+
+            case 2:
+                log_message(LOG_INFO, "Searching symbols");
+                analysis_search_symbols(p);
+                break;
+
+            case 3:
+                log_message(LOG_INFO, "Analyzing change impact");
+                analysis_impact(p);
+                break;
+
+            case 4:
+                log_message(LOG_INFO, "Writing SourceScope report");
+                analysis_write_report(p, "sourcescope_report.txt");
+                log_message(LOG_INFO, "Report generation requested");
+                break;
+
+            case 5:
+                log_message(LOG_INFO, "Cleaning up project resources");
+                project_cleanup(p);
+                free(p);
+                log_message(LOG_INFO, "SourceScope stopped");
+                return EXIT_SUCCESS;
+
+            default:
+                puts("Invalid choice.");
+                log_message(LOG_WARNING, "Invalid menu choice");
+                break;
+        }
     }
 }
