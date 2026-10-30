@@ -6,6 +6,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include "scanner.h"
+#include "logger.h"
 static int ends_with(const char *s, const char *suffix)
 {
     size_t a = strlen(s), b = strlen(suffix);
@@ -19,23 +20,37 @@ static void join_path(char *out, size_t cap, const char *dir, const char *name)
 }
 int scanner_add_file(Project *p, const char *path)
 {
+        logger_log(LOG_DEBUG, "Scanning source file: %s", path);
     FILE *fp; long size; char *data; size_t got; int index;
     if (p->file_count >= SS_MAX_FILES) return 0;
     fp = fopen(path, "rb");
-    if (!fp) { fprintf(stderr, "Warning: cannot open %s: %s\n", path, strerror(errno)); return 0; }
+       if (fp != NULL)
+        logger_log(LOG_DEBUG, "Successfully opened file: %s", path); 
+    if (!fp) {
+    logger_log(LOG_WARNING, "Cannot open file %s: %s", path, strerror(errno));
+    fprintf(stderr, "Warning: cannot open %s: %s\n", path, strerror(errno));
+    return 0;
+}
     if (fseek(fp, 0, SEEK_END) != 0 || (size = ftell(fp)) < 0 || fseek(fp, 0, SEEK_SET) != 0) {
         fclose(fp); return 0;
     }
     data = (char *)malloc((size_t)size + 1);
-    if (!data) { fclose(fp); return 0; }
+    if (!data) {
+    logger_log(LOG_ERROR, "Memory allocation failed for file: %s", path);
+    fclose(fp);
+    return 0;
+}
     got = fread(data, 1, (size_t)size, fp); fclose(fp);
     if (got != (size_t)size) { free(data); return 0; }
     data[size] = '\0'; index = p->file_count++;
     snprintf(p->files[index].path, sizeof(p->files[index].path), "%s", path);
-    p->files[index].source = data; p->files[index].length = (size_t)size; return 1;
+    p->files[index].source = data; p->files[index].length = (size_t)size;
+    logger_log(LOG_INFO, "File scanned successfully: %s", path);
+    return 1;
 }
 void scanner_scan_directory(Project *p, const char *dir_name, int depth)
 {
+        logger_log(LOG_INFO, "Scanning directory: %s", dir_name);
     DIR *dir; struct dirent *entry;
     if (depth > 32) return;
     dir = opendir(dir_name);
@@ -54,4 +69,5 @@ void scanner_scan_directory(Project *p, const char *dir_name, int depth)
         }
     }
     closedir(dir);
+    logger_log(LOG_INFO, "Finished scanning directory: %s", dir_name);
 }
