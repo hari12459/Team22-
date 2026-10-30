@@ -37,7 +37,7 @@ logger_log(LOG_INFO, "SourceScope application started");
     project_cleanup(p);
     free(p);
     logger_close();
-    return EXIT_SUCCESS;w
+    return EXIT_SUCCESS;
             default:puts("Invalid choice.");break;
         }
     }
