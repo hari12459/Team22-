@@ -4,7 +4,6 @@
 #include <string.h>
 #include "parser.h"
 #include "project.h"
-#include "logger.h"
 static int id_start(char c) { return isalpha((unsigned char)c) || c == '_'; }
 static int id_part(char c) { return isalnum((unsigned char)c) || c == '_'; }
 static int is_keyword(const char *w)
@@ -34,7 +33,8 @@ static char *mask_source(const char *src, size_t len)
         } else {
             char end = state==3 ? '"' : '\'';
             if (c=='\\' && i+1<len) { if(out[i]!='\n')out[i]=' '; if(out[i+1]!='\n')out[i+1]=' '; i+=2; continue; }
-            if (c==end) state=0; if(c!='\n')out[i]=' ';
+            if (c==end) state=0; 
+            if(c!='\n')out[i]=' ';
         }
         ++i;
     }
@@ -42,7 +42,10 @@ static char *mask_source(const char *src, size_t len)
 }
 static int line_at(const char *s, size_t pos)
 {
-    int line=1; size_t i; for(i=0;i<pos;++i) if(s[i]=='\n') ++line; return line;
+    int line=1; 
+    size_t i;
+     for(i=0;i<pos;++i) if(s[i]=='\n') ++line; 
+     return line;
 }
 static void directives(Project *p, int fi, const char *s)
 {
@@ -59,10 +62,9 @@ static void directives(Project *p, int fi, const char *s)
                 name[n]='\0'; if(n) (void)project_add_symbol(p,name,SYM_MACRO,fi,line_no);
             } else if (!strncmp(q,"include",7)) {
                 const char *open=strchr(original,'"'); char close='"'; const char *closep;
-                
+                char name[SS_MAX_PATH]; size_t n;
                 if(!open) { open=strchr(original,'<'); close='>'; }
                 if(open && (closep=strchr(open+1,close))!=NULL) {
-                    char name[SS_MAX_PATH]; size_t n;
                     n=(size_t)(closep-open-1);
                     if(n<sizeof(name)) { memcpy(name,open+1,n); name[n]='\0';
                         (void)project_add_file_edge(p,p->files[fi].path,name,"INCLUDE",line_no); }
@@ -77,14 +79,23 @@ static void find_definitions(Project *p, int fi, const char *s)
     size_t i=0,len=strlen(s);
     while(i<len) {
         if(id_start(s[i])) {
-            size_t start=i,j,k,n; char name[SS_MAX_NAME]; int depth=0;
-            while(i<len && id_part(s[i])) ++i; n=i-start;
-            if(n>=sizeof(name)) continue; memcpy(name,s+start,n); name[n]='\0';
+            size_t start=i,j,k,n; 
+            char name[SS_MAX_NAME]; 
+            int depth=0;
+            while(i<len && id_part(s[i])){ ++i; }
+            n=i-start;
+            if(n>=sizeof(name)) 
+                continue;
+             memcpy(name,s+start,n); 
+             name[n]='\0';
             if(is_keyword(name)) continue;
             j=i; while(j<len && isspace((unsigned char)s[j])) ++j;
             if(j>=len || s[j]!='(') continue;
-            depth=1; k=j+1;
-            while(k<len && depth>0){if(s[k]=='(')++depth;else if(s[k]==')')--depth;++k;}
+            depth=1;
+            k=j+1;
+            while(k<len && depth>0){if(s[k]=='(')++depth;
+                else if(s[k]==')')--depth;
+                ++k;}
             while(k<len && isspace((unsigned char)s[k])) ++k;
             if(depth==0 && k<len && s[k]=='{')
                 (void)project_add_symbol(p,name,SYM_FUNCTION,fi,line_at(s,start));
@@ -93,18 +104,23 @@ static void find_definitions(Project *p, int fi, const char *s)
 }
 static void find_calls(Project *p, int fi, const char *s)
 {
-    size_t i=0,len=strlen(s); int current=-1,brace=0;
+    size_t i=0,len=strlen(s); 
+    int current=-1,brace=0;
     while(i<len) {
         if(id_start(s[i])) {
-           size_t start=i,j,n;
-           char name[SS_MAX_NAME];
-            while(i<len && id_part(s[i])) ++i; n=i-start;
-            if(n>=sizeof(name)) continue; memcpy(name,s+start,n); name[n]='\0';
-            j=i; while(j<len && isspace((unsigned char)s[j])) ++j;
+            size_t start=i,j,k,n; 
+            char name[SS_MAX_NAME]; 
+            int depth;
+            while(i<len && id_part(s[i])) {++i;} 
+            n=i-start;
+            if(n>=sizeof(name)) continue;
+             memcpy(name,s+start,n);
+              name[n]='\0';
+            j=i; 
+            while(j<len && isspace((unsigned char)s[j])) ++j;
             if(j<len && s[j]=='(' && !is_keyword(name)) {
-                size_t k;
-                int depth;
-                depth=1;k=j+1;
+                depth=1;
+                k=j+1;
                 while(k<len && depth>0){if(s[k]=='(')++depth;else if(s[k]==')')--depth;++k;}
                 while(k<len && isspace((unsigned char)s[k])) ++k;
                 {
@@ -126,16 +142,13 @@ static void find_simple_variables(Project *p, int fi, const char *s)
     while(*line) {
         const char *end=strchr(line,'\n'); size_t len=end?(size_t)(end-line):strlen(line);
         char buf[2048]; size_t n=len<sizeof(buf)-1?len:sizeof(buf)-1;
-        char *q;
+        char *q,*semi,*eq,*token,*last=NULL;
         memcpy(buf,line,n);buf[n]='\0';q=buf;while(*q&&isspace((unsigned char)*q))++q;
         if(*q && *q!='#' && strchr(q,';') && !strchr(q,'(') &&
            (!strncmp(q,"int ",4)||!strncmp(q,"char ",5)||!strncmp(q,"float ",6)||
             !strncmp(q,"double ",7)||!strncmp(q,"long ",5)||!strncmp(q,"short ",6)||
             !strncmp(q,"static ",7)||!strncmp(q,"const ",6)||!strncmp(q,"unsigned ",9)||
             !strncmp(q,"volatile ",9))) {
-
-            char *semi, *eq, *token;
-            const char *last = NULL;
             semi=strchr(q,';');if(semi)*semi='\0';eq=strchr(q,'=');if(eq)*eq='\0';
             token=strtok(q," \t*[],:");
             while(token){if(id_start(token[0])&&!is_keyword(token))last=token;token=strtok(NULL," \t*[],:");}
@@ -146,10 +159,8 @@ static void find_simple_variables(Project *p, int fi, const char *s)
 }
 void parser_analyze_file(Project *p, int fi)
 {
-        logger_log(LOG_INFO, "Starting parser analysis for file: %s", p->files[fi].path);
     char *masked=mask_source(p->files[fi].source,p->files[fi].length);
     if(!masked){fprintf(stderr,"Parser allocation failed: %s\n",p->files[fi].path);++p->errors_count;return;}
     directives(p,fi,masked); find_definitions(p,fi,masked); find_calls(p,fi,masked);
     find_simple_variables(p,fi,masked); free(masked);
-    logger_log(LOG_INFO, "Finished parser analysis for file: %s", p->files[fi].path);
 }
