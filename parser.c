@@ -4,6 +4,7 @@
 #include <string.h>
 #include "parser.h"
 #include "project.h"
+#include "logger.h"
 static int id_start(char c) { return isalpha((unsigned char)c) || c == '_'; }
 static int id_part(char c) { return isalnum((unsigned char)c) || c == '_'; }
 static int is_keyword(const char *w)
@@ -145,8 +146,10 @@ static void find_simple_variables(Project *p, int fi, const char *s)
 }
 void parser_analyze_file(Project *p, int fi)
 {
+        logger_log(LOG_INFO, "Starting parser analysis for file: %s", p->files[fi].path);
     char *masked=mask_source(p->files[fi].source,p->files[fi].length);
     if(!masked){fprintf(stderr,"Parser allocation failed: %s\n",p->files[fi].path);++p->errors_count;return;}
     directives(p,fi,masked); find_definitions(p,fi,masked); find_calls(p,fi,masked);
     find_simple_variables(p,fi,masked); free(masked);
+    logger_log(LOG_INFO, "Finished parser analysis for file: %s", p->files[fi].path);
 }
