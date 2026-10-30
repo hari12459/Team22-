@@ -5,8 +5,16 @@
 #include "parser.h"
 #include "analysis.h"
 #include "project.h"
+#include "logger.h"
 int main(int argc,char **argv)
 {
+    if (!logger_init("sourcescope.log"))
+{
+    fprintf(stderr, "Failed to initialize logger\n");
+    return 1;
+}
+
+logger_log(LOG_INFO, "SourceScope application started");
     Project *p;int i,choice;
     if(argc!=2){printf("Usage: %s <source-directory>\n",argv[0]);return EXIT_FAILURE;}
     p=(Project *)calloc(1,sizeof(*p));if(!p){fputs("Out of memory.\n",stderr);return EXIT_FAILURE;}
@@ -28,4 +36,8 @@ int main(int argc,char **argv)
             default:puts("Invalid choice.");break;
         }
     }
+    
+    logger_log(LOG_INFO, "SourceScope application stopped");
+
+logger_close();
 }
