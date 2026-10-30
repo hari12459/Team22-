@@ -2,14 +2,17 @@
 #include <string.h>
 #include "analysis.h"
 #include "bst.h"
+#include "logger.h"
 void analysis_print_statistics(const Project *p)
 {
+    logger_log(LOG_INFO, "Starting project statistics");
     int i,fn=0,var=0,mac=0;
     for(i=0;i<p->symbol_count;++i){if(p->symbols[i].type==SYM_FUNCTION)++fn;
         else if(p->symbols[i].type==SYM_VARIABLE)++var;else if(p->symbols[i].type==SYM_MACRO)++mac;}
     puts("\n=== PROJECT STATISTICS ===");
     printf("Files: %d\nFunctions: %d\nProbable variables: %d\nMacros: %d\nInclude edges: %d\nCall edges: %d\nWarnings: %d\n",
         p->file_count,fn,var,mac,p->file_edge_count,p->call_edge_count,p->errors_count);
+    logger_log(LOG_INFO, "Finished project statistics");
 }
 void analysis_print_symbols(const Project *p)
 {
@@ -73,6 +76,7 @@ void analysis_impact(const Project *p)
 }
 void analysis_write_report(const Project *p,const char *path)
 {
+    logger_log(LOG_INFO, "Starting report generation: %s", path);
     FILE *fp=fopen(path,"w");int i;if(!fp){perror("Could not write report");return;}
     fprintf(fp,"SourceScope Analysis Report\n===========================\nFiles: %d\nSymbols: %d\nInclude edges: %d\nCall edges: %d\n",
         p->file_count,p->symbol_count,p->file_edge_count,p->call_edge_count);
@@ -86,4 +90,5 @@ void analysis_write_report(const Project *p,const char *path)
         const char *caller=e->caller_symbol>=0?p->symbols[e->caller_symbol].name:"<unknown>";
         fprintf(fp,"%s -> %s (%s:%d)\n",caller,e->callee,p->files[e->file_index].path,e->line);}
     fclose(fp);printf("Report written to %s\n",path);
+    logger_log(LOG_INFO, "Finished report generation: %s", path);
 }
