@@ -32,7 +32,12 @@ logger_log(LOG_INFO, "SourceScope application started");
             case 2:analysis_search_symbols(p);break;
             case 3:analysis_impact(p);break;
             case 4:analysis_write_report(p,"sourcescope_report.txt");break;
-            case 5:project_cleanup(p);free(p);return EXIT_SUCCESS;
+            case 5:
+    logger_log(LOG_INFO, "SourceScope application stopped");
+    project_cleanup(p);
+    free(p);
+    logger_close();
+    return EXIT_SUCCESS;w
             default:puts("Invalid choice.");break;
         }
     }
