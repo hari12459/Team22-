@@ -12,16 +12,12 @@ static const char *get_level_name(LogLevel level)
     {
         case LOG_DEBUG:
             return "DEBUG";
-
         case LOG_INFO:
             return "INFO";
-
         case LOG_WARNING:
             return "WARNING";
-
         case LOG_ERROR:
             return "ERROR";
-
         default:
             return "UNKNOWN";
     }
@@ -46,20 +42,24 @@ void logger_log(LogLevel level, const char *format, ...)
         return;
 
     struct timespec ts;
-    struct tm time_info;
+    struct tm *time_info;
 
-    timespec_get(&ts, TIME_UTC);
+    if (timespec_get(&ts, TIME_UTC) != TIME_UTC)
+        return;
 
-    localtime_r(&ts.tv_sec, &time_info);
+    time_info = localtime(&ts.tv_sec);
+
+    if (time_info == NULL)
+        return;
 
     fprintf(log_file,
             "[%04d-%02d-%02d %02d:%02d:%02d.%03ld] [%s] ",
-            time_info.tm_year + 1900,
-            time_info.tm_mon + 1,
-            time_info.tm_mday,
-            time_info.tm_hour,
-            time_info.tm_min,
-            time_info.tm_sec,
+            time_info->tm_year + 1900,
+            time_info->tm_mon + 1,
+            time_info->tm_mday,
+            time_info->tm_hour,
+            time_info->tm_min,
+            time_info->tm_sec,
             ts.tv_nsec / 1000000,
             get_level_name(level));
 
