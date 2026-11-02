@@ -1,0 +1,46 @@
+# SourceScope Makefile for the company-server Linux environment
+CC := gcc
+CXX := g++
+GCOV := gcov
+CPPCHECK := cppcheck
+
+CFLAGS ?= -std=c11 -Wall -Wextra -I. -g
+CXXFLAGS ?= -std=c++17 -Wall -Wextra -I. -g
+GTEST_LIBS ?= -lgtest -lgtest_main -pthread
+
+C_SOURCES := scanner.c parser.c bst.c project.c analysis.c
+OBJECTS := $(C_SOURCES:.c=.o)
+TEST_SRC := Test_common.cpp
+TEST_BIN := gtest_common
+
+.PHONY: all test clean coverage cppcheck help
+
+all: $(TEST_BIN)
+
+%.o: %.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(TEST_BIN): $(OBJECTS) $(TEST_SRC)
+	$(CXX) $(CXXFLAGS) $(TEST_SRC) $(OBJECTS) $(GTEST_LIBS) -o $@
+
+test: $(TEST_BIN)
+	./$(TEST_BIN)
+
+coverage:
+	$(MAKE) clean
+	$(MAKE) CFLAGS="$(CFLAGS) --coverage -O0" CXXFLAGS="$(CXXFLAGS) --coverage -O0" $(TEST_BIN)
+	./$(TEST_BIN)
+	$(GCOV) -b -c $(C_SOURCES)
+
+cppcheck:
+	$(CPPCHECK) --enable=warning,style,performance,portability --error-exitcode=1 $(C_SOURCES)
+
+clean:
+	rm -f $(OBJECTS) $(TEST_BIN) *.gcda *.gcno *.gcov
+
+help:
+	@echo "make          - build the Google Test executable"
+	@echo "make test     - build and run Google Tests"
+	@echo "make coverage - rebuild with gcov, run tests, report coverage"
+	@echo "make cppcheck - run Cppcheck"
+	@echo "make clean    - remove generated files"
